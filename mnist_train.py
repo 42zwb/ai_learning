@@ -4,6 +4,8 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
+# confirmed a very big change here on 4/13/2026
+
 # 1. 设备
 device = torch.device("cpu")
 
