@@ -1,0 +1,484 @@
+import os
+import torch
+from torch import nn
+
+
+# =========================================================
+# 第 0 部分：设置随机种子，保证每次运行时结果更稳定、更容易复现
+# =========================================================
+torch.manual_seed(42)
+
+
+# =========================================================
+# 第 1 部分：最基础的模型构建 —— 使用 nn.Sequential 按顺序搭网络
+# =========================================================
+print("=" * 80)
+print("第1部分：使用 nn.Sequential 构建模型")
+print("=" * 80)
+
+# 这里定义了一个简单的多层感知机（MLP）
+# 输入维度是 20，隐藏层输出 256，最后输出 10
+net = nn.Sequential(
+    nn.Linear(20, 256),   # 全连接层：把每个样本的特征维度从 20 变成 256
+    nn.ReLU(),            # 激活函数：增加非线性能力
+    nn.Linear(256, 10)    # 全连接层：把 256 维再映射到 10 维
+)
+
+print("模型结构：")
+print(net)
+
+# 构造一个输入张量
+# 这里的 2 表示 batch size，也就是一次输入 2 个样本
+# 20 表示每个样本有 20 个特征
+X = torch.rand(2, 20)
+
+# 前向传播：把输入送进网络，得到输出
+Y = net(X)
+
+print("\n输入 X 的形状：", X.shape)
+print("输出 Y 的形状：", Y.shape)
+print("输出 Y：\n", Y)
+
+
+# =========================================================
+# 第 2 部分：参数访问 —— 查看某一层、某个参数、state_dict 等
+# =========================================================
+print("\n" + "=" * 80)
+print("第2部分：参数访问与管理")
+print("=" * 80)
+
+# net[0] 表示第 1 个 Linear 层
+print("第一个线性层：")
+print(net[0])
+
+# 查看第一个线性层的权重和偏置形状
+print("\n第一个线性层权重 shape：", net[0].weight.shape)
+print("第一个线性层偏置 shape：", net[0].bias.shape)
+
+# state_dict() 会返回模型中所有可学习参数的字典
+print("\n模型的 state_dict 键：")
+for k in net.state_dict().keys():
+    print(k)
+
+# 查看第一个线性层前两行权重
+print("\n第一个线性层权重的前两行：")
+print(net[0].weight[:2])
+
+# 查看第一个线性层偏置的前 5 个值
+print("\n第一个线性层偏置的前 5 个值：")
+print(net[0].bias[:5])
+
+# 遍历模型的全部参数
+print("\n遍历模型全部参数：")
+for name, param in net.named_parameters():
+    print(f"{name:20s} shape={tuple(param.shape)}")
+
+
+# =========================================================
+# 第 3 部分：自定义块（Block）—— 继承 nn.Module 自己写网络
+# =========================================================
+print("\n" + "=" * 80)
+print("第3部分：自定义块（nn.Module）")
+print("=" * 80)
+
+# 自定义一个 MLP 块
+class MLP(nn.Module):
+    def __init__(self):
+        # super().__init__() 的作用是先完成父类 nn.Module 的初始化
+        # 如果不写，PyTorch 无法正确识别你定义的层和参数
+        super().__init__()
+
+        # 在 __init__ 里定义层
+        self.hidden = nn.Linear(20, 256)
+        self.act = nn.ReLU()
+        self.out = nn.Linear(256, 10)
+
+    def forward(self, X):
+        # forward 定义“前向传播”的计算过程
+        X = self.hidden(X)
+        X = self.act(X)
+        X = self.out(X)
+        return X
+
+
+mlp = MLP()
+print("自定义 MLP 结构：")
+print(mlp)
+
+Y2 = mlp(X)
+print("\n自定义 MLP 输出形状：", Y2.shape)
+
+
+# =========================================================
+# 第 4 部分：嵌套块 —— 模型中再包含子模块
+# =========================================================
+print("\n" + "=" * 80)
+print("第4部分：嵌套块")
+print("=" * 80)
+
+# 先定义一个“顺序块”工厂函数，用来快速构造重复结构
+def block1():
+    return nn.Sequential(
+        nn.Linear(20, 64),
+        nn.ReLU(),
+        nn.Linear(64, 20),
+        nn.ReLU()
+    )
+
+# 再定义一个更大的块，里面嵌套多个子块
+class BigNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(
+            block1(),
+            block1(),
+            nn.Linear(20, 10)
+        )
+
+    def forward(self, X):
+        return self.net(X)
+
+
+big_net = BigNet()
+print("嵌套块结构：")
+print(big_net)
+
+Y_big = big_net(X)
+print("\n嵌套块输出形状：", Y_big.shape)
+
+
+# =========================================================
+# 第 5 部分：参数初始化 —— 内置初始化、自定义初始化
+# =========================================================
+print("\n" + "=" * 80)
+print("第5部分：参数初始化")
+print("=" * 80)
+
+# 重新定义一个模型，便于演示初始化效果
+init_net = nn.Sequential(
+    nn.Linear(20, 64),
+    nn.ReLU(),
+    nn.Linear(64, 10)
+)
+
+# -----------------------------
+# 5.1 使用内置初始化
+# -----------------------------
+# 对第 1 层做 Xavier 初始化
+nn.init.xavier_uniform_(init_net[0].weight)
+
+# 把偏置初始化成 0
+nn.init.zeros_(init_net[0].bias)
+
+print("第1层 Xavier 初始化后的权重前两行：")
+print(init_net[0].weight[:2])
+
+print("\n第1层初始化后的偏置：")
+print(init_net[0].bias[:10])
+
+# -----------------------------
+# 5.2 自定义初始化函数
+# -----------------------------
+def my_init(module):
+    # 这里只对 Linear 层做处理
+    if isinstance(module, nn.Linear):
+        print(f"正在初始化：{module}")
+        # 权重先随机均匀初始化到 [-10, 10]
+        nn.init.uniform_(module.weight, -10, 10)
+        # 再把绝对值小于 5 的位置置零，演示“自定义规则”
+        module.weight.data *= (module.weight.data.abs() >= 5)
+        # 偏置全部置零
+        nn.init.zeros_(module.bias)
+
+# apply 会递归地把这个初始化函数应用到模型中的每一层
+init_net.apply(my_init)
+
+print("\n自定义初始化后，第1层权重前两行：")
+print(init_net[0].weight[:2])
+
+print("\n自定义初始化后，第2个线性层权重前两行：")
+print(init_net[2].weight[:2])
+
+
+# =========================================================
+# 第 6 部分：参数共享 —— 多处使用同一个层对象
+# =========================================================
+print("\n" + "=" * 80)
+print("第6部分：参数共享")
+print("=" * 80)
+
+# 这里创建一个共享层
+shared = nn.Linear(8, 8)
+
+# 注意：下面这个模型中，shared 被用了两次
+# 两次出现不是“复制了两个层”，而是“同一个层对象被重复调用”
+shared_net = nn.Sequential(
+    nn.Linear(20, 8),
+    nn.ReLU(),
+    shared,
+    nn.ReLU(),
+    shared,
+    nn.ReLU(),
+    nn.Linear(8, 1)
+)
+
+X_shared = torch.rand(2, 20)
+Y_shared = shared_net(X_shared)
+
+print("共享参数网络结构：")
+print(shared_net)
+print("\n输出形状：", Y_shared.shape)
+
+# 验证两次使用的 shared 是否真的是同一组参数
+print("\n两次 shared 的权重是否是同一个对象：")
+print(shared_net[2].weight is shared_net[4].weight)
+
+print("两次 shared 的偏置是否是同一个对象：")
+print(shared_net[2].bias is shared_net[4].bias)
+
+
+# =========================================================
+# 第 7 部分：延后初始化（Lazy Initialization）
+# =========================================================
+print("\n" + "=" * 80)
+print("第7部分：延后初始化")
+print("=" * 80)
+
+# LazyLinear 的特点是：定义时不用立刻写输入维度
+# 只写输出维度即可
+lazy_net = nn.Sequential(
+    nn.LazyLinear(128),   # 暂时不知道输入维度是多少，等第一次见到数据再确定
+    nn.ReLU(),
+    nn.LazyLinear(10)
+)
+
+print("延后初始化的模型：")
+print(lazy_net)
+
+# 第一次真正喂数据之前，参数尺寸还没有完全确定
+X_lazy = torch.rand(4, 20)
+
+# 当第一次前向传播发生时：
+# 第1层看到输入最后一维是 20，就自动补成 Linear(20, 128)
+# 第2层看到前一层输出最后一维是 128，就自动补成 Linear(128, 10)
+Y_lazy = lazy_net(X_lazy)
+
+print("\n第一次前向传播后，输出形状：", Y_lazy.shape)
+
+print("\n延后初始化完成后的参数 shape：")
+for name, param in lazy_net.named_parameters():
+    print(f"{name:20s} shape={tuple(param.shape)}")
+
+
+# =========================================================
+# 第 8 部分：自定义层 —— 无参数层
+# =========================================================
+print("\n" + "=" * 80)
+print("第8部分：自定义层（无参数层）")
+print("=" * 80)
+
+class CenteredLayer(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, X):
+        # 返回“输入减去均值”的结果
+        # 这个层没有可学习参数，只定义了一种计算行为
+        return X - X.mean()
+
+
+center_layer = CenteredLayer()
+data = torch.tensor([1.0, 2.0, 3.0, 4.0])
+print("原始数据：", data)
+print("经过 CenteredLayer 后：", center_layer(data))
+
+
+# =========================================================
+# 第 9 部分：自定义层 —— 有参数层
+# =========================================================
+print("\n" + "=" * 80)
+print("第9部分：自定义层（有参数层）")
+print("=" * 80)
+
+class MyLinear(nn.Module):
+    def __init__(self, in_units, out_units):
+        super().__init__()
+
+        # nn.Parameter 表示“这是一个需要训练的参数”
+        # 一旦赋值给 Module 的属性，PyTorch 就会自动跟踪它
+        self.weight = nn.Parameter(torch.randn(in_units, out_units))
+        self.bias = nn.Parameter(torch.randn(out_units))
+
+    def forward(self, X):
+        # 这里手工实现线性层计算：XW + b
+        linear = torch.matmul(X, self.weight) + self.bias
+
+        # 为了演示，也可以手动加一个 ReLU
+        return torch.relu(linear)
+
+
+my_linear = MyLinear(5, 3)
+X_my = torch.rand(2, 5)
+Y_my = my_linear(X_my)
+
+print("自定义有参数层输出：")
+print(Y_my)
+
+print("\n自定义层中的参数：")
+for name, param in my_linear.named_parameters():
+    print(f"{name:10s} shape={tuple(param.shape)}")
+
+
+# =========================================================
+# 第 10 部分：模型读写 —— 保存与加载张量、参数
+# =========================================================
+print("\n" + "=" * 80)
+print("第10部分：模型读写（保存与加载）")
+print("=" * 80)
+
+# 为了避免覆盖，定义保存目录
+save_dir = "./chapter5_demo_files"
+os.makedirs(save_dir, exist_ok=True)
+
+# -----------------------------
+# 10.1 保存和读取普通张量
+# -----------------------------
+tensor_path = os.path.join(save_dir, "x_tensor.pt")
+
+x = torch.arange(4)
+torch.save(x, tensor_path)
+
+x_loaded = torch.load(tensor_path)
+print("保存并读取张量：")
+print("原始张量：", x)
+print("读取张量：", x_loaded)
+
+# -----------------------------
+# 10.2 保存和读取字典对象
+# -----------------------------
+dict_path = os.path.join(save_dir, "dict_data.pt")
+
+my_dict = {
+    "X": torch.arange(4),
+    "Y": torch.zeros(4)
+}
+torch.save(my_dict, dict_path)
+
+dict_loaded = torch.load(dict_path)
+print("\n保存并读取字典：")
+print(dict_loaded)
+
+# -----------------------------
+# 10.3 保存和加载模型参数 state_dict
+# -----------------------------
+model_path = os.path.join(save_dir, "mlp_state_dict.pt")
+
+# 先定义一个模型并让它跑一下
+model_a = nn.Sequential(
+    nn.Linear(20, 64),
+    nn.ReLU(),
+    nn.Linear(64, 10)
+)
+
+X_model = torch.rand(2, 20)
+Y_model_a = model_a(X_model)
+
+# 保存参数字典，而不是整个模型结构
+torch.save(model_a.state_dict(), model_path)
+
+# 重新定义一个“结构相同”的模型
+model_b = nn.Sequential(
+    nn.Linear(20, 64),
+    nn.ReLU(),
+    nn.Linear(64, 10)
+)
+
+# 把 model_a 的参数加载到 model_b 中
+model_b.load_state_dict(torch.load(model_path))
+
+# 一般加载完参数后，会调用 eval()，表示进入评估模式
+# 这样在有 Dropout、BatchNorm 等层时，行为会切换到推理/测试模式
+model_b.eval()
+
+Y_model_b = model_b(X_model)
+
+print("\n比较保存加载前后的输出是否一致：")
+print(torch.allclose(Y_model_a, Y_model_b))
+
+print("model_a 输出：\n", Y_model_a)
+print("model_b 输出：\n", Y_model_b)
+
+
+# =========================================================
+# 第 11 部分：GPU 使用 —— 把张量和模型移动到同一设备
+# =========================================================
+print("\n" + "=" * 80)
+print("第11部分：GPU 使用")
+print("=" * 80)
+
+# 先判断当前机器是否有可用 GPU
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("当前设备：", device)
+
+gpu_net = nn.Sequential(
+    nn.Linear(20, 64),
+    nn.ReLU(),
+    nn.Linear(64, 10)
+)
+
+# 模型移动到 device
+gpu_net = gpu_net.to(device)
+
+# 数据也必须移动到同一个 device
+X_gpu = torch.rand(3, 20).to(device)
+
+# 只有“模型和数据在同一设备”时，计算才能正常进行
+Y_gpu = gpu_net(X_gpu)
+
+print("输入设备：", X_gpu.device)
+print("模型第1层权重所在设备：", gpu_net[0].weight.device)
+print("输出设备：", Y_gpu.device)
+print("输出形状：", Y_gpu.shape)
+
+# 如果你想把结果拿回 CPU（比如转成 numpy 或打印后继续处理）
+Y_cpu = Y_gpu.cpu()
+print("转回 CPU 后的输出设备：", Y_cpu.device)
+
+
+# =========================================================
+# 第 12 部分：补充演示 —— 为什么“同一计算中的对象必须在同一设备”
+# =========================================================
+print("\n" + "=" * 80)
+print("第12部分：设备一致性说明")
+print("=" * 80)
+
+print(
+    "说明：\n"
+    "1）模型参数在哪个设备上，输入数据也必须在同一个设备上；\n"
+    "2）如果模型在 GPU，而输入在 CPU，就会报错；\n"
+    "3）因此常见写法是：\n"
+    "   model.to(device)\n"
+    "   X = X.to(device)\n"
+    "   Y = model(X)\n"
+)
+
+
+# =========================================================
+# 第 13 部分：把这一章的核心串起来总结
+# =========================================================
+print("\n" + "=" * 80)
+print("第13部分：本章操作总结")
+print("=" * 80)
+
+print(
+    "本代码演示了：\n"
+    "1. 如何用 nn.Sequential 构建网络；\n"
+    "2. 如何用 nn.Module 自定义块；\n"
+    "3. 如何查看参数、state_dict；\n"
+    "4. 如何做参数初始化；\n"
+    "5. 如何进行参数共享；\n"
+    "6. 如何使用 LazyLinear 演示延后初始化；\n"
+    "7. 如何自定义无参数层和有参数层；\n"
+    "8. 如何保存和加载张量、模型参数；\n"
+    "9. 如何把模型和数据放到 GPU 上运行。\n"
+)
