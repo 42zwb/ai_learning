@@ -1,1 +1,1 @@
-notes of ai learning
+notes
